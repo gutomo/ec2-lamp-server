@@ -1,0 +1,1247 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Amazon Linux 2023  ( https://github.com/aws-samples/ec2-lamp-server )
+Transform: "AWS::LanguageExtensions"
+
+Metadata:
+  License:
+    Description: >
+      Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+      SPDX-License-Identifier: MIT-0
+
+      Permission is hereby granted, free of charge, to any person obtaining a copy of this
+      software and associated documentation files (the "Software"), to deal in the Software
+      without restriction, including without limitation the rights to use, copy, modify,
+      merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+      permit persons to whom the Software is furnished to do so.
+
+      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+      INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+      PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+      HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+      OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+      SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: EC2
+        Parameters:
+          - ec2Name
+          - ec2KeyPair
+          - processorArchitecture
+          - instanceType
+      - Label:
+          default: Network
+        Parameters:
+          - vpcID
+          - subnetID
+          - displayPublicIP
+          - assignStaticIP
+      - Label:
+          default: Remote administration
+        Parameters:
+          - ingressIPv4
+          - ingressIPv6
+      - Label:
+          default: LAMP
+        Parameters:
+          - webOption
+          - phpVersion
+          - databaseOption
+          - databaseRootPassword          
+          - s3BucketName
+          - r53ZoneID
+      - Label:
+          default: EBS volume
+        Parameters:
+          - volumeSize
+          - volumeType
+      - Label:
+          default: WordPress Parameters
+        Parameters:
+          - WPAdminUsername
+          - WPAdminPassword
+          - WPDatabase          
+    ParameterLabels:
+      processorArchitecture:
+        default: "Processor architecture"
+      instanceType:
+        default: "Instance type (x86_64 or arm64)"
+      ec2Name:
+        default: "Instance name"
+      ec2KeyPair:
+        default: "Keypair name"
+      volumeSize:
+        default: "Volume size (GiB)"
+      volumeType:
+        default: "Volume type"
+      vpcID:
+        default: "VPC with internet connectivity"
+      subnetID:
+        default: "Subnet with internet connectivity"
+      displayPublicIP:
+        default: "EC2 in public subnet with public IP assigned?"
+      assignStaticIP:
+        default: "[Elastic IP] Assign static public internet IPv4 address?"
+      ingressIPv4:
+        default: "Allowed IPv4 prefix to SSH"
+      ingressIPv6:
+        default: "Allowed IPv6 prefix to SSH"
+      webOption:
+        default: "Web server to install"
+      databaseOption:
+        default: "Database server to install"
+      databaseRootPassword:
+        default: "Database root password"
+      phpVersion:
+        default: "PHP version to install"
+      s3BucketName:
+        default: "(optional) S3 bucket name to grant access to"
+      r53ZoneID:
+        default: "(optional) Route 53 hosted zone ID to grant access to"
+      WPAdminUsername:
+        default: "Wordpress admin user name"
+      WPAdminPassword:
+        default: "Wordpress admin password"
+      WPDatabase:
+        default: "Wordpress database"
+
+Parameters:
+  processorArchitecture:
+    Type: String
+    Description: https://aws.amazon.com/ec2/graviton/
+    AllowedValues:
+      - Intel/AMD (x86_64)
+      - Graviton (arm64)
+    Default: Graviton (arm64)
+  instanceType:
+    Type: String
+    Description: "https://console.aws.amazon.com/ec2/#InstanceTypes"
+   #Default: t2.micro
+    Default: t4g.small
+
+  ec2Name:
+    Type: String
+   #Description: EC2 instance name
+    Default: AmazonLinux-2023-LAMP-Wordpress-Stack
+  ec2KeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: "https://console.aws.amazon.com/ec2/#KeyPairs"
+    ConstraintDescription: Specify a key pair
+    AllowedPattern: ".+"
+    Default: ec2-key-pair-ap-southeast-1    
+  volumeSize:
+    Type: Number
+    #Description: Volume size in GiBs
+    MinValue: 8
+    MaxValue: 16384
+    Default: 8
+  volumeType:
+    Type: String
+    Description: https://aws.amazon.com/ebs/general-purpose/
+    AllowedValues:
+      - "gp3"
+      - "gp2"
+    Default: "gp3"
+
+  WPDatabase:
+    AllowedPattern: ^([a-zA-Z0-9_]*)$
+    Default: wordpress_db
+    Description: The wordpress database name.
+    Type: String    
+  WPAdminUsername:
+    AllowedPattern: ^([a-zA-Z0-9_]*)$
+    Description: The wordpress admin username.
+    Default: wordpress_user
+    ConstraintDescription: Must contain only alphanumeric characters and be at least 8 characters.
+    MaxLength: 16
+    MinLength: 1
+    Type: String
+  WPAdminPassword:
+    AllowedPattern: ^([a-z0-9A-Z`~!#$%^&*()_+,\\-])*$
+    ConstraintDescription: Must be letters (upper or lower), numbers, and these special characters '_'`~!#$%^&*()_+,-
+    Default: wLzBbV2R#
+    Description: The wordpress admin password.
+    MaxLength: 41
+    MinLength: 8
+    NoEcho: true
+    Type: String        
+
+  vpcID:
+    Type: AWS::EC2::VPC::Id
+    Description: "https://console.aws.amazon.com/vpcconsole/home#vpcs:"
+    ConstraintDescription: Specify a valid value
+    AllowedPattern: ".+"
+  subnetID:
+    Type: AWS::EC2::Subnet::Id
+    Description: "https://console.aws.amazon.com/vpcconsole/home#subnets:"
+    ConstraintDescription: Specify a valid value
+    AllowedPattern: ".+"
+  assignStaticIP:
+    Type: String
+    Description: "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/elastic-ip-addresses-eip.html"
+    AllowedValues:
+      - "Yes"
+      - "No"
+    Default: "No"
+  displayPublicIP:
+    Type: String
+    Description: "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-instance-addressing.html#concepts-public-addresses"
+    AllowedValues:
+      - "Yes"
+      - "No"
+    Default: "Yes"
+
+  ingressIPv4:
+    Type: String
+    Description: "e.g. 1.2.3.4/32, get your source IP from https://checkip.amazonaws.com "
+    Default: 0.0.0.0/0
+  ingressIPv6:
+    Type: String
+    Description: "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-instance-addressing.html#ipv6-addressing"
+    Default: ::/0
+
+  webOption:
+    Type: String
+    #Description: Web server to install
+    AllowedValues:
+      - "Apache"
+      - "Nginx"
+      - "none"
+    Default: "Apache"
+  databaseOption:
+    Type: String
+    #Description: Database to install
+    AllowedValues:
+      - "MariaDB"
+      - "MySQL"
+      - "PostgreSQL"
+      - "none"
+    Default: "MySQL"
+  databaseRootPassword:
+    AllowedPattern: ^([a-z0-9A-Z`~!#$%^&*()_+,\\-])*$
+    ConstraintDescription: Must be letters (upper or lower), numbers, and these special characters '_'`~!#$%^&*()_+,-
+    Default: wLzBbV2R#
+    Description: The wordpress admin password.
+    MaxLength: 41
+    MinLength: 8
+    NoEcho: true
+    Type: String
+  phpVersion:
+    Type: String
+    #Description: PHP version to install
+    AllowedValues:
+      - "php8.1"
+      - "php8.2"
+      - "none"
+    Default: "php8.2"
+  s3BucketName:
+    Type: String
+    Description: "https://console.aws.amazon.com/s3/buckets"
+    Default: "gutomo"
+  r53ZoneID:
+    Type: String
+    Description: "https://console.aws.amazon.com/route53/v2/hostedzones"
+    Default: ""
+
+Conditions:
+  useARM64: !Equals [!Ref processorArchitecture, "Graviton (arm64)"]
+  useElasticIP: !Equals [!Ref assignStaticIP, "Yes"]
+  displayPublicIP: !Equals [!Ref displayPublicIP, "Yes"]
+  hasS3Bucket: !Not [!Equals [!Ref s3BucketName, ""]]
+  hasR53Zone: !Not [!Equals [!Ref r53ZoneID, ""]]
+  hasEIC:
+    !Not [
+      !Equals [
+        !FindInMap [
+          EICprefixMap,
+          !Ref AWS::Region,
+          "IpPrefix",
+          DefaultValue: 127.0.0.1/32,
+        ],
+        "127.0.0.1/32",
+      ],
+    ]
+  createEICsg: !And [!Condition hasEIC, !Condition displayPublicIP]
+
+Mappings:
+  EICprefixMap: # EC2 instance connect: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-connect-prerequisites.html#ec2-instance-connect-setup-security-group
+    af-south-1:
+      IpPrefix: 13.244.121.196/30
+    ap-east-1:
+      IpPrefix: 43.198.192.104/29
+    ap-northeast-1:
+      IpPrefix: 3.112.23.0/29
+    ap-northeast-2:
+      IpPrefix: 13.209.1.56/29
+    ap-northeast-3:
+      IpPrefix: 15.168.105.160/29
+    ap-south-1:
+      IpPrefix: 13.233.177.0/29
+    ap-south-2:
+      IpPrefix: 18.60.252.248/29
+    ap-southeast-1:
+      IpPrefix: 3.0.5.32/29
+    ap-southeast-2:
+      IpPrefix: 13.239.158.0/29
+    ap-southeast-3:
+      IpPrefix: 43.218.193.64/29
+    ap-southeast-4:
+      IpPrefix: 16.50.248.80/29
+    ca-central-1:
+      IpPrefix: 35.183.92.176/29
+    cn-north-1:
+      IpPrefix: 43.196.20.40/29
+    cn-northwest-1:
+      IpPrefix: 43.192.155.8/29
+    eu-central-1:
+      IpPrefix: 3.120.181.40/29
+    eu-central-2:
+      IpPrefix: 16.63.77.8/29
+    eu-north-1:
+      IpPrefix: 13.48.4.200/30
+    eu-south-1:
+      IpPrefix: 15.161.135.164/30
+    eu-south-2:
+      IpPrefix: 18.101.90.48/29
+    eu-west-1:
+      IpPrefix: 18.202.216.48/29
+    eu-west-2:
+      IpPrefix: 3.8.37.24/29
+    eu-west-3:
+      IpPrefix: 35.180.112.80/29
+    il-central-1:
+      IpPrefix: 51.16.183.224/29
+    me-central-1:
+      IpPrefix: 3.29.147.40/29
+    me-south-1:
+      IpPrefix: 16.24.46.56/29
+    sa-east-1:
+      IpPrefix: 18.228.70.32/29
+    us-east-1:
+      IpPrefix: 18.206.107.24/29
+    us-east-2:
+      IpPrefix: 3.16.146.0/29
+    us-gov-east-1:
+      IpPrefix: 18.252.4.0/30
+    us-gov-west-1:
+      IpPrefix: 15.200.28.80/30
+    us-west-1:
+      IpPrefix: 13.52.6.112/29
+    us-west-2:
+      IpPrefix: 18.237.140.160/29
+
+Resources:
+  instanceIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+            Action: ["sts:AssumeRole"]
+      Path: /
+      Policies:
+        - PolicyName: MountPointS3Access
+          PolicyDocument: # MountPoint for S3: https://github.com/awslabs/mountpoint-s3/blob/main/doc/CONFIGURATION.md
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub
+                  - "arn:${AWS::Partition}:s3:::${bucketName}"
+                  - bucketName:
+                      !If [hasS3Bucket, !Ref s3BucketName, "DOC-EXAMPLE-BUCKET"]
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:AbortMultipartUpload
+                  - s3:DeleteObject
+                Resource: !Sub
+                  - "arn:${AWS::Partition}:s3:::${bucketName}/*"
+                  - bucketName:
+                      !If [hasS3Bucket, !Ref s3BucketName, "DOC-EXAMPLE-BUCKET"]
+        - PolicyName: MountPointS3ExpressAccess
+          PolicyDocument: # MountPoint for S3: https://github.com/awslabs/mountpoint-s3/blob/main/doc/CONFIGURATION.md
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3express:CreateSession
+                Resource: !Sub
+                  - "arn:${AWS::Partition}:s3express:${AWS::Region}:${AWS::AccountId}:bucket/${bucketName}--az_id--x-s3"
+                  - bucketName:
+                      !If [hasS3Bucket, !Ref s3BucketName, "DOC-EXAMPLE-BUCKET"]
+        - PolicyName: Route53CertbotAccess
+          PolicyDocument: # Certbot dns_route53 : https://certbot-dns-route53.readthedocs.io/en/stable/
+            Version: "2012-10-17"
+            Statement: # https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/specifying-rrset-conditions.html
+              - Effect: Allow
+                Action:
+                  - route53:ListHostedZones
+                  - route53:GetChange
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - route53:ChangeResourceRecordSets
+                Resource: !Sub
+                  - "arn:${AWS::Partition}:route53:::hostedzone/${hostedZone}"
+                  - hostedZone:
+                      !If [hasR53Zone, !Ref r53ZoneID, "EXAMPLE-ZONE-ID"]
+                Condition:
+                  ForAllValues:StringEquals:
+                    "route53:ChangeResourceRecordSetsRecordTypes": ["TXT"]
+                  ForAllValues:StringLike:
+                    "route53:ChangeResourceRecordSetsNormalizedRecordNames":
+                      ["_acme-challenge.*"]
+        - PolicyName: Route53UpdaterAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement: # https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/specifying-rrset-conditions.html
+              - Effect: Allow
+                Action:
+                  - route53:ListHostedZones
+                  - route53:GetChange
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - route53:ChangeResourceRecordSets
+                Resource: !Sub
+                  - "arn:${AWS::Partition}:route53:::hostedzone/${hostedZone}"
+                  - hostedZone:
+                      !If [hasR53Zone, !Ref r53ZoneID, "EXAMPLE-ZONE-ID"]
+                Condition:
+                  ForAllValues:StringEquals:
+                    "route53:ChangeResourceRecordSetsRecordTypes": ["A", "AAAA"]
+                  ForAllValues:StringLike:
+                    "route53:ChangeResourceRecordSetsNormalizedRecordNames":
+                      ["site.example.com"]
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/CloudWatchAgentServerPolicy"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AWSXRayDaemonWriteAccess"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeployLimited"
+      Tags:
+        - Key: StackName
+          Value: !Sub ${AWS::StackName}
+        - Key: StackId
+          Value: !Sub ${AWS::StackId}
+        - Key: GitHub
+          Value: https://github.com/aws-samples/ec2-lamp-server
+
+  instanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref instanceIamRole
+
+  securityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow inbound SSH, HTTP, HTTPS
+      VpcId: !Ref vpcID
+      SecurityGroupIngress:
+        - Description: SSH (IPv4)
+          IpProtocol: "tcp"
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref ingressIPv4
+        - Description: SSH (IPv6)
+          IpProtocol: "tcp"
+          FromPort: 22
+          ToPort: 22
+          CidrIpv6: !Ref ingressIPv6
+        - Description: HTTP (IPv4)
+          IpProtocol: "tcp"
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - Description: HTTP (IPv6)
+          IpProtocol: "tcp"
+          FromPort: 80
+          ToPort: 80
+          CidrIpv6: ::/0
+        - Description: HTTPS (IPv4)
+          IpProtocol: "tcp"
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: HTTPS (IPv6)
+          IpProtocol: "tcp"
+          FromPort: 443
+          ToPort: 443
+          CidrIpv6: ::/0
+      SecurityGroupEgress:
+        - Description: Allow all outbound traffic (IPv4)
+          IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+        - Description: Allow all outbound traffic (IPv6)
+          IpProtocol: "-1"
+          CidrIpv6: ::/0
+      Tags:
+        - Key: StackName
+          Value: !Sub ${AWS::StackName}
+        - Key: StackId
+          Value: !Sub ${AWS::StackId}
+        - Key: Name
+          Value: !Sub "[${AWS::StackName}] - ${ec2Name}"
+        - Key: GitHub
+          Value: https://github.com/aws-samples/ec2-lamp-server
+
+  securityGroupForEIC:
+    Condition: createEICsg
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow in-browser SSH via EC2 Instance Connect
+      VpcId: !Ref vpcID
+      SecurityGroupIngress:
+        - Description: SSH from EIC IP
+          IpProtocol: "tcp"
+          FromPort: 22
+          ToPort: 22
+          CidrIp:
+            !FindInMap [
+              EICprefixMap,
+              !Ref AWS::Region,
+              "IpPrefix",
+              DefaultValue: 127.0.0.1/32,
+            ]
+      SecurityGroupEgress:
+        - Description: Allow ICMP to EIC IP
+          IpProtocol: "icmp"
+          FromPort: -1
+          ToPort: -1
+          CidrIp:
+            !FindInMap [
+              EICprefixMap,
+              !Ref AWS::Region,
+              "IpPrefix",
+              DefaultValue: 127.0.0.1/32,
+            ]
+      Tags:
+        - Key: StackName
+          Value: !Sub ${AWS::StackName}
+        - Key: StackId
+          Value: !Sub ${AWS::StackId}
+        - Key: Name
+          Value: !Sub "[${AWS::StackName}] - ${ec2Name} - EIC"
+        - Key: GitHub
+          Value: https://github.com/aws-samples/ec2-lamp-server
+
+  ec2Instance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Metadata:
+      Comment: Install Update files
+      AWS::CloudFormation::Init:
+        configSets:
+          setup:
+            - 00_setup
+          php_install:
+            - 01_php_install
+          wordpress_install:
+            - 02_wordpress_install  
+        00_setup: # in the following order: packages, groups, users, sources, files, commands, and then services.
+          files:
+            "/home/ec2-user/update-mountpoint-s3":
+              content: |
+                #!/bin/bash
+                cd /tmp
+                if (uname -a | grep -q x86); then
+                  wget -4 https://s3.amazonaws.com/mountpoint-s3-release/latest/x86_64/mount-s3.rpm
+                else
+                  wget -4 https://s3.amazonaws.com/mountpoint-s3-release/latest/arm64/mount-s3.rpm
+                fi
+                sudo dnf install -y ./mount-s3.rpm
+              mode: "000755"
+              owner: "ec2-user"
+              group: "ec2-user"
+            "/etc/systemd/system/mount-s3-helper.service":
+              content: |
+                # https://github.com/awslabs/mountpoint-s3/blob/main/doc/CONFIGURATION.md#automatically-mounting-an-s3-bucket-at-boot
+                [Unit]
+                Description=Mountpoint for S3 helper
+                Wants=network.target
+
+                [Service]
+                Restart=on-failure
+                RestartSec=5
+                Type=forking
+                ExecStart=/opt/mount-s3-helper.sh
+                ExecStop=/usr/bin/fusermount -u /mnt/s3-bucket-mount
+
+                [Install]
+                WantedBy=remote-fs.target
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            "/opt/mount-s3-helper.sh":
+              content: !Sub
+                - |
+                  #!/bin/bash
+                  S3_BUCKET_NAME=${S3-BUCKET-NAME}
+                  MOUNT_FOLDER=/mnt/s3-bucket-mount
+                  USER=ec2-user
+                  GROUP=apache
+
+                  USERID=$(cat /etc/passwd | grep ^$USER: | head -n 1 | cut -d":" -f 3)
+                  GROUPID=$(cat /etc/group | grep ^$GROUP: | head -n 1 | cut -d":" -f 3)
+
+                  mkdir -p $MOUNT_FOLDER
+                  /usr/bin/mount-s3 --uid $USERID --gid $GROUPID --allow-overwrite --allow-delete --allow-other $S3_BUCKET_NAME $MOUNT_FOLDER
+                - S3-BUCKET-NAME:
+                    !If [hasS3Bucket, !Ref s3BucketName, "DOC-EXAMPLE-BUCKET"]
+              mode: "000744"
+              owner: "root"
+              group: "root"
+            "/etc/systemd/system/route53-updater.service":
+              content: |
+                [Unit]
+                Description=Route53 DNS updater
+                After=network.target
+
+                [Service]
+                Restart=on-failure
+                RestartSec=5
+                Type=oneshot
+                ExecStart=/opt/route53-updater.sh
+                RemainAfterExit=true
+
+                [Install]
+                WantedBy=multi-user.target
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            "/opt/route53-updater.sh":
+              content: !Sub
+                - |
+                  #!/bin/bash
+                  R53_ZONE_ID=${R53-ZONE-ID}
+                  DNS_ENTRY=site.example.com
+
+                  AWS_IP=`curl -s checkip.amazonaws.com`
+                  aws route53 change-resource-record-sets --cli-input-json '{
+                  "HostedZoneId": "/hostedzone/'$R53_ZONE_ID'",
+                  "ChangeBatch": {
+                      "Comment": "Stack ${AWS::StackName}",
+                      "Changes": [
+                          {
+                            "Action": "UPSERT",
+                            "ResourceRecordSet": {
+                                "Name": "'$DNS_ENTRY'",
+                                "Type": "A",
+                                "TTL": 60,
+                              "ResourceRecords": [
+                                {
+                                  "Value": "'$AWS_IP'"
+                                }
+                              ]
+                            }
+                          }
+                      ]
+                  }}'
+                - R53-ZONE-ID:
+                    !If [hasR53Zone, !Ref r53ZoneID, "EXAMPLE-ZONE-ID"]
+              mode: "000755"
+              owner: "root"
+              group: "root"
+            "/etc/systemd/system/dcv-post-reboot.service":
+              content: |
+                [Unit]
+                Description=Post install tasks
+                After=default.target network.target
+
+                [Service]
+                ExecStart=/opt/dcv-post-reboot.sh
+
+                [Install]
+                WantedBy=default.target
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            "/opt/dcv-post-reboot.sh":
+              content: !Sub |
+                #!/bin/bash
+                sysctl -w net.ipv6.conf.all.disable_ipv6=1
+                sysctl -w net.ipv6.conf.default.disable_ipv6=1
+
+                # USB remotization: https://docs.aws.amazon.com/dcv/latest/adminguide/manage-usb-remote.html
+
+                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ec2Instance --region ${AWS::Region}
+                sysctl -w net.ipv6.conf.all.disable_ipv6=0
+                sysctl -w net.ipv6.conf.default.disable_ipv6=0
+
+                rm -f /etc/systemd/system/dcv-post-reboot.service
+                rm -f ${!0}
+                systemctl daemon-reload
+              mode: "000755"
+              owner: "root"
+              group: "root"
+            "/opt/aws/amazon-cloudwatch-agent/bin/config.json":
+              content: |
+                {
+                  "agent": {
+                    "metrics_collection_interval": 60,
+                    "run_as_user": "cwagent"
+                  },
+                  "metrics": {
+                    "aggregation_dimensions": [
+                      [
+                        "InstanceId"
+                      ]
+                    ],
+                    "append_dimensions": {
+                      "AutoScalingGroupName": "${!aws:AutoScalingGroupName}",
+                      "ImageId": "${!aws:ImageId}",
+                      "InstanceId": "${!aws:InstanceId}",
+                      "InstanceType": "${!aws:InstanceType}"
+                    },
+                    "metrics_collected": {
+                      "disk": {
+                        "measurement": [
+                          "used_percent"
+                        ],
+                        "metrics_collection_interval": 60,
+                          "resources": [
+                            "/"
+                          ]
+                      },
+                      "mem": {
+                        "measurement": [
+                          "mem_used_percent"
+                        ],
+                        "metrics_collection_interval": 60
+                      },                
+                      "diskio": {
+                        "measurement": [
+                          "io_time"
+                        ],
+                        "metrics_collection_interval": 60,
+                        "resources": [
+                          "nvme0n1"
+                        ]
+                      },
+                      "cpu": {
+                        "measurement": [
+                          "cpu_usage_idle",
+                          "cpu_usage_iowait",
+                          "cpu_usage_user",
+                          "cpu_usage_system"
+                        ],
+                        "metrics_collection_interval": 60,
+                        "totalcpu": false
+                      }
+                    }
+                  },
+                  "traces": {
+                    "buffer_size_mb": 3,
+                    "concurrency": 8,
+                    "insecure": false,
+                    "traces_collected": {
+                      "xray": {
+                        "bind_address": "127.0.0.1:2000",
+                        "tcp_proxy": {
+                          "bind_address": "127.0.0.1:2000"
+                        }
+                      }
+                    }
+                  }
+                }
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            "/etc/yum.repos.d/fedora.repo": # Fedora repo: disabled https://repost.aws/questions/QUIYtGINewTZ2k4tkp2QqeEw/php-repository-installation
+              content: |
+                [fedora]
+                name=Fedora 36 - $basearch
+                #baseurl=http://download.example/pub/fedora/linux/releases/36/Everything/$basearch/os/
+                metalink=https://mirrors.fedoraproject.org/metalink?repo=fedora-36&arch=$basearch
+                enabled=0
+                countme=1
+                metadata_expire=7d
+                repo_gpgcheck=0
+                type=rpm
+                gpgcheck=1
+                gpgkey=https://getfedora.org/static/fedora.gpg
+                skip_if_unavailable=False
+              mode: "000644"
+              owner: "root"
+              group: "root"
+        01_php_install:
+          files:
+            "/root/install-php.sh":
+              content: !Sub |
+                #!/bin/bash
+                mkdir -p /tmp/cfn
+                cd /tmp/cfn
+
+                export PHP="${phpVersion}"
+                case $PHP in
+                  none)
+                    ;;
+                  *)
+                    # Will install httpd
+                    dnf install -q -y ${phpVersion}
+                    dnf install -q -y php-{cli,fpm,opcache}
+                    dnf install -q -y php-{mysqlnd,pgsql,pdo,dba}
+                    dnf install -q -y php-{xml,soap,ldap,intl}
+                    dnf install -q -y php-{mbstring,bcmath,gd,enchant,pspell,tidy}
+
+                    # PHP.INI
+                    cp /etc/php.ini /etc/php.ini."`date +"%Y-%m-%d"`"
+                    sed -i "/^;max_input_vars/a max_input_vars=5000" /etc/php.ini
+                    sed -i 's/memory_limit =.*/memory_limit = 4096M/' /etc/php.ini
+                    sed -i 's/upload_max_filesize =.*/upload_max_filesize = 16M/' /etc/php.ini
+                    sed -i 's/post_max_size =.*/post_max_size = 16M/' /etc/php.ini
+
+                    cp /etc/php-fpm.d/www.conf /etc/php-fpm.d/www.conf."`date +"%Y-%m-%d"`"
+                    # https://www.php.net/manual/en/class.sessionhandler.php
+                    sed -i "s/^php_value\[session.save_handler/;&/" /etc/php-fpm.d/www.conf
+                    sed -i "/^;php_value\[session.save_handler/a php_value[session.save_handler] = redis" /etc/php-fpm.d/www.conf
+                    sed -i "s/^php_value\[session.save_path/;&/" /etc/php-fpm.d/www.conf
+                    sed -i '/^;php_value\[session.save_path/a php_value[session.save_path] = tcp://127.0.0.1:6379' /etc/php-fpm.d/www.conf
+
+                    # https://www.php.net/manual/en/opcache.configuration.php
+                    cp /etc/php.d/10-opcache.ini /etc/php.d/10-opcache.ini."`date +"%Y-%m-%d"`"
+                    sed -i '1 i\opcache.enable=1\nopcache.jit=1205\nopcache.jit_buffer_size=100M' /etc/php.d/10-opcache.ini
+                    # https://www.php.net/manual/en/opcache.configuration.php#ini.opcache.file-cache
+                    mkdir -p /var/www/.opcache
+                    chown apache:apache /var/www/.opcache
+                    sed -i 's/;opcache.file_cache=.*/;opcache.file_cache=\/var\/www\/.opcache/' /etc/php.d/10-opcache.ini
+
+                    # https://www.php.net/manual/en/install.pecl.pear.php
+                    dnf install -q -y php-devel php-pear gcc
+                    pear update-channels
+                    pecl update-channels
+
+                    # https://github.com/amazonlinux/amazon-linux-2023/issues/206
+                    # php-apcu: https://github.com/krakjoe/apcu/blob/master/package.xml
+                    dnf install -q -y php-apcu
+                    if (! php -m | grep -q apcu); then
+                      yes 'no' | pecl install --configureoptions 'enable-apcu-debug="no"' apcu
+                      echo 'extension=apcu.so' > /etc/php.d/42-apcu.ini
+                    fi
+
+                    # php-igbinary: https://pecl.php.net/package/igbinary
+                    dnf install -q -y php-igbinary
+                    if (! php -m | grep -q igbinary); then
+                      yes 'no' | pecl install igbinary
+                      echo 'extension=igbinary.so' > /etc/php.d/30-igbinary.ini
+                    fi
+
+                    # php-msgpack: https://github.com/msgpack/msgpack-php/blob/master/package.xml
+                    dnf install -q -y php-msgpack
+                    if (! php -m | grep -q msgpack); then
+                      yes 'no' | pecl install msgpack
+                      echo 'extension=msgpack.so' > /etc/php.d/30-msgpack.ini
+                    fi
+
+                    # php-lzf: https://github.com/php/pecl-file_formats-lzf/blob/master/package.xml
+                    dnf install -q -y php-lzf
+                    if (! php -m | grep -q lzf); then
+                      yes 'no' | pecl install --configureoptions 'enable-lzf-better-compression="no"' lzf
+                      echo 'extension=lzf.so' > /etc/php.d/40-lzf.ini
+                    fi
+
+                    # php-zstd: https://github.com/kjdev/php-ext-zstd/blob/master/package.xml
+                    dnf install -q -y php-zstd
+                    if (! php -m | grep -q zstd); then
+                      dnf install -q -y libzstd-devel
+                      yes 'no' | pecl install zstd
+                      echo 'extension=zstd.so' > /etc/php.d/40-zstd.ini
+                    fi
+
+                    # https://github.com/amazonlinux/amazon-linux-2023/issues/207
+                    # php-imagick: https://github.com/Imagick/imagick/blob/master/package.xml
+                    dnf install -q -y php-imagick
+                    if (! php -m | grep -q imagick); then
+                      dnf install -q -y ImageMagick ImageMagick-devel
+                      yes 'no' | sudo pecl install -f --configureoptions 'with-imagick="autodetect"' imagick
+                      echo 'extension=imagick.so' > /etc/php.d/25-imagick.ini
+                    fi
+
+                    # https://github.com/amazonlinux/amazon-linux-2023/issues/328
+                    # php-redis: https://github.com/phpredis/phpredis/blob/develop/package.xml
+                    dnf install -q -y php-redis
+                    if (! php -m | grep -q redis); then
+                      dnf install -q -y redis6-devel lz4-devel
+                      yes 'no' | pecl install --configureoptions 'enable-redis-igbinary="yes" enable-redis-lzf="yes" enable-redis-zstd="yes" enable-redis-msgpack="yes" enable-redis-lz4="yes" with-liblz4="yes"' redis
+                      echo 'extension=redis.so' > /etc/php.d/41-redis.ini
+                    fi
+
+                    # https://github.com/amazonlinux/amazon-linux-2023/issues/208
+                    # php-memcached: https://github.com/php-memcached-dev/php-memcached/blob/master/package.xml
+                    dnf install -q -y php-memcached
+                    if (! php -m | grep -q memcached); then
+                      dnf install -q -y memcached-devel libmemcached-awesome-devel zlib-devel cyrus-sasl-devel libevent-devel
+                      yes 'no' | pecl install --configureoptions 'enable-memcached-igbinary="yes" enable-memcached-msgpack="yes" enable-memcached-json="yes" enable-memcached-protocol="yes" enable-memcached-sasl="yes" enable-memcached-session="yes"' memcached
+                      echo 'extension=memcached.so' > /etc/php.d/41-memcached.ini
+                    fi
+
+                    # https://github.com/amazonlinux/amazon-linux-2023/issues/195
+                    # php-zip: https://github.com/pierrejoye/php_zip/blob/master/package.xml
+                    dnf install -q -y php-zip
+                    if (! php -m | grep -q zip); then
+                      dnf install -q -y libzip-devel
+                      yes 'no' | pecl install zip
+                      echo 'extension=zip.so' > /etc/php.d/20-zip.ini
+                    fi
+
+                    # https://github.com/amazonlinux/amazon-linux-2023/issues/204
+                    # libsodium: https://github.com/jedisct1/libsodium-php/blob/master/package.xml
+                    dnf install -q -y php-sodium
+                    if (! php -m | grep -q sodium); then
+                      dnf install -q -y libsodium-devel
+                      yes 'no' | pecl install -f libsodium
+                      echo 'extension=sodium.so' > /etc/php.d/20-sodium.ini
+                    fi
+
+                    # php-lz4: https://github.com/kjdev/php-ext-lz4
+                    dnf install -q -y php-lz4
+                    if (! php -m | grep -q lz4); then
+                      cd /tmp/cfn
+                      dnf install -q -y git lz4-devel
+                      git clone --recursive --depth=1 https://github.com/kjdev/php-ext-lz4.git
+                      cd php-ext-lz4
+                      phpize
+                      ./configure --with-lz4-includedir=/usr
+                      make
+                      make install
+                      echo 'extension=lz4.so' > /etc/php.d/40-lz4.ini
+                    fi
+                    cd /tmp/cfn
+
+                    # https://github.com/amazonlinux/amazon-linux-2023/issues/371
+                    # Composer: https://getcomposer.org/download/
+                    dnf install -q -y composer
+                    if (! which composer); then
+                      curl -s -L -O https://getcomposer.org/installer
+                      export COMPOSER_HOME=/root && php installer --quiet
+                      mv ./composer.phar /usr/local/bin/composer
+                    fi
+
+                    systemctl enable php-fpm
+                    systemctl restart php-fpm
+
+                    ;;
+                esac
+              mode: "000755"
+              owner: "root"
+              group: "root"
+          commands:
+            install:
+              command: "/root/install-php.sh > /var/log/install-php.log"
+              ignoreErrors: "true"
+        02_wordpress_install:
+          files:
+            "/root/install-wordpress.sh":
+              content: !Sub |
+                #!/bin/bash
+                cd /tmp
+
+                systemctl start mysqld
+                grep 'temporary password' /var/log/mysqld.log >> mysql-tmp-password.txt
+                mysql -u root -p$(grep -oE '[^ ]+$' mysql-tmp-password.txt) --connect-expired-password -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${databaseRootPassword}';"
+                mysql -u root -p${databaseRootPassword} -e "CREATE USER '${WPAdminUsername}'@'localhost' IDENTIFIED BY '${WPAdminPassword}';
+                CREATE DATABASE ${WPDatabase};
+                GRANT ALL PRIVILEGES ON ${WPDatabase}.* TO '${WPAdminUsername}'@'localhost';
+                FLUSH PRIVILEGES;"
+
+                wget https://wordpress.org/latest.tar.gz
+                tar -xzf latest.tar.gz
+                cp wordpress/wp-config-sample.php wordpress/wp-config.php
+                sed -i 's/database_name_here/${WPDatabase}/' wordpress/wp-config.php
+                sed -i 's/username_here/${WPAdminUsername}/' wordpress/wp-config.php
+                sed -i 's/password_here/${WPAdminPassword}/' wordpress/wp-config.php
+                SALT=$(curl -L https://api.wordpress.org/secret-key/1.1/salt/)
+                STRING='put your unique phrase here'
+                printf '%s\n' "g/$STRING/d" a "$SALT" . w | ed -s wordpress/wp-config.php
+                cp -r wordpress/* /var/www/html/
+
+                sed -i '/<Directory "\/var\/www\/html">/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/httpd/conf/httpd.conf
+
+                chown -R apache /var/www
+                chgrp -R apache /var/www
+                chmod 2775 /var/www
+                find /var/www -type d -exec chmod 2775 {} \;
+                find /var/www -type f -exec chmod 0644 {} \;
+                systemctl restart httpd
+
+              mode: "000755"
+              owner: "root"
+              group: "root"
+          commands:
+            install:
+              command: "/root/install-wordpress.sh > /var/log/install-wordpress.log"
+              ignoreErrors: "true"                 
+    Properties:
+      ImageId: # https://github.com/amazonlinux/amazon-linux-2023
+        !If [
+          useARM64,
+          "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-arm64}}",
+          "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64}}",
+        ]
+      InstanceType: !Ref instanceType
+      IamInstanceProfile: !Ref instanceProfile
+      KeyName: !Ref ec2KeyPair
+      SubnetId: !Ref subnetID
+      Monitoring: true
+      SecurityGroupIds:
+        - !Ref securityGroup
+        - !If [createEICsg, !Ref securityGroupForEIC, !Ref AWS::NoValue]
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: !Ref volumeType
+            VolumeSize: !Ref volumeSize
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          mkdir -p /tmp/cfn
+          cd /tmp/cfn
+
+          # disable IPv6 during setup
+          sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sysctl -w net.ipv6.conf.default.disable_ipv6=1
+
+          dnf clean all
+          dnf install -q -y wget tmux unzip tar curl-minimal sed
+
+          export CFN_INIT="/opt/aws/bin/cfn-init"
+
+          $CFN_INIT -v --stack ${AWS::StackName} --resource ec2Instance --region ${AWS::Region} -c setup
+
+          # No graphical desktop: https://github.com/amazonlinux/amazon-linux-2023/issues/47
+          echo "export AWS_CLI_AUTO_PROMPT=on-partial" >> /home/ec2-user/.bashrc
+
+          # Update OS
+          dnf update -q -y
+          # dnf-automatic: https://dnf.readthedocs.io/en/latest/automatic.html
+          dnf install -q -y dnf-automatic
+          sed -i 's/apply_updates = no/apply_updates = yes/g' /etc/dnf/automatic.conf
+          sed -i 's/emit_via = stdio/emit_via = motd/g' /etc/dnf/automatic.conf
+          systemctl enable dnf-automatic-install.timer
+          dnf clean all
+          sleep 30
+
+          # https://github.com/amazonlinux/amazon-linux-2023/issues/493
+          # MountPoint-S3: https://github.com/awslabs/mountpoint-s3
+          dnf install -q -y mount-s3
+          if (dnf info mount-s3  | grep -q Installed); then
+            rm -f /home/ec2-user/update-mountpoint-s3
+          else
+            if (uname -a | grep -q x86); then
+              curl -s -L -O https://s3.amazonaws.com/mountpoint-s3-release/latest/x86_64/mount-s3.rpm
+            else
+              curl -s -L -O https://s3.amazonaws.com/mountpoint-s3-release/latest/arm64/mount-s3.rpm
+            fi
+            dnf install -q -y ./mount-s3.rpm
+          fi
+
+          # Redis & Memcached
+          dnf install -q -y redis6 memcached
+          systemctl enable --now redis6 memcached
+
+          # Install PHP
+          $CFN_INIT -v --stack ${AWS::StackName} --resource ec2Instance --region ${AWS::Region} -c php_install
+
+          # Certbot: https://github.com/amazonlinux/amazon-linux-2023/issues/444
+          dnf install -q -y certbot python3-certbot-dns-route53
+          systemctl daemon-reload
+          systemctl enable certbot-renew.timer
+
+          # Web server
+          export WEB="${webOption}"
+          case $WEB in
+            Apache)
+              dnf install -q -y python3-certbot-apache
+              dnf install -q -y httpd mod_ssl mod_fcgid
+              systemctl enable httpd
+
+              # virtual host: for Certbot
+              cat << EoF > /etc/httpd/conf.d/www.conf
+          <VirtualHost *:80>
+            ServerAdmin webmaster@localhost
+            DocumentRoot /var/www/html
+          </VirtualHost>
+          EoF
+
+              # Change permissions and ownership
+              usermod -a -G apache ec2-user
+              chown -R ec2-user:apache /var/www/html
+              chmod -R 2775 /var/www/html
+              find /var/www/html -type d -exec sudo chmod 2775 {} \;
+              find /var/www/html -type f -exec sudo chmod 0664 {} \;
+
+              systemctl restart httpd
+              ;;
+            Nginx)
+              dnf remove -q -y httpd
+              dnf install -q -y python3-certbot-nginx
+              dnf install -q -y nginx
+              systemctl enable nginx
+
+              cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf."`date +"%Y-%m-%d"`"
+              # enable sites-enabled and sites-available folders
+              mkdir -p /etc/nginx/sites-enabled
+              mkdir -p /etc/nginx/sites-available
+              cp /etc/nginx/nginx.conf /etc/nginx/sites-available/default
+              ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+
+              # nginx.conf: comment out http site
+              sed -i "37,54s/^/##/g" /etc/nginx/nginx.conf
+              sed -i "/^http/a \    \include /etc/nginx/sites-enabled/*;" /etc/nginx/nginx.conf
+
+              # build sites-available/default
+              sed -i "1,36s/^/#/g" /etc/nginx/sites-available/default
+              sed -i "80s/^#//g" /etc/nginx/sites-available/default
+              cp /etc/nginx/sites-available/default /etc/nginx/sites-available/default."`date +"%Y-%m-%d"`"
+
+              # default: enable HTTPS
+              sed -i "53,54s/^/#/g" /etc/nginx/sites-available/default
+              sed -i "58,59s/^#//g" /etc/nginx/sites-available/default
+              sed -i "81,83s/^/#/g" /etc/nginx/sites-available/default
+
+              # dummy HTTPS cert
+              mkdir -p /etc/pki/tls/nginx
+              openssl req -x509 -newkey rsa:2048 -keyout /etc/pki/tls/nginx/key.pem -out /etc/pki/tls/nginx/cert.pem -sha256 -days 3650 -nodes -subj "/C=XX/ST=State/L=City/O=Company/OU=Dept/CN=Host"
+              sed -i "s/ssl_certificate /#&/" /etc/nginx/sites-available/default
+              sed -i "/#ssl_certificate /a \        \ssl_certificate \"/etc/pki/tls/nginx/cert.pem\";" /etc/nginx/sites-available/default
+              sed -i "s/ssl_certificate_key /#&/" /etc/nginx/sites-available/default
+              sed -i "/#ssl_certificate_key/a \        \ssl_certificate_key \"/etc/pki/tls/nginx/key.pem\";" /etc/nginx/sites-available/default
+              sed -i "/#ssl_certificate_key/a \        \ssl_ciphers PROFILE=SYSTEM;" /etc/nginx/sites-available/default
+              # set default_server
+              sed -i "s/80;/80 default_server;/g" /etc/nginx/sites-available/default
+              sed -i "s/http2;/http2 default_server;/g" /etc/nginx/sites-available/default
+              # remove leading white spaces and commented lines
+              sed -i "/^#/d" /etc/nginx/sites-available/default
+              sed -i "s/^\s\s\s\s//" /etc/nginx/sites-available/default
+
+              # Change permissions and ownership
+              usermod -a -G nginx ec2-user
+              usermod -a -G nginx apache
+              chown -R ec2-user:nginx /usr/share/nginx/html
+              chmod -R 2775 /usr/share/nginx/html
+              find /usr/share/nginx/html -type d -exec sudo chmod 2775 {} \;
+              find /usr/share/nginx/html -type f -exec sudo chmod 0664 {} \;
+
+              systemctl restart nginx
+              ;;
+            none)
+              dnf remove -q -y httpd
+              ;;
+          esac
+
+          # Database
+          export DB="${databaseOption}"
+          case $DB in
+            MySQL) # https://dev.mysql.com/downloads/repo/yum/
+              # https://dev.mysql.com/doc/refman/8.0/en/checking-rpm-signature.html
+              rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2022
+              # https://dev.mysql.com/doc/refman/8.0/en/linux-installation-yum-repo.html
+              dnf install -q -y https://dev.mysql.com/get/mysql80-community-release-el9-5.noarch.rpm
+              dnf install -q -y mysql-community-server
+              systemctl enable mysqld
+              ;;
+            MariaDB)
+              dnf install -q -y mariadb10*-server
+              systemctl enable mariadb
+              ;;
+            PostgreSQL)
+              dnf clean metadata
+              dnf install -q -y postgresql1*-server
+              /usr/bin/postgresql-setup --initdb
+              systemctl enable postgresql
+              ;;
+          esac
+
+          # Install Wordpress
+          $CFN_INIT -v --stack ${AWS::StackName} --resource ec2Instance --region ${AWS::Region} -c wordpress_install
+
+          # NFS client
+          dnf install -q -y amazon-efs-utils
+
+          # https://github.com/amazonlinux/amazon-linux-2023/issues/277
+          # CodeDeploy agent: https://docs.aws.amazon.com/codedeploy/latest/userguide/codedeploy-agent-operations-install-linux.html
+          dnf install -q -y ruby
+          dnf install -q -y codedeploy-agent
+          if [ ! -f /opt/codedeploy-agent/bin/codedeploy-agent ]; then
+            curl -s -L -O https://aws-codedeploy-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/latest/install
+            chmod +x ./install
+            ./install auto
+          fi
+
+          # CloudWatch agent: https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/install-CloudWatch-Agent-on-EC2-Instance.html
+          dnf install -q -y amazon-cloudwatch-agent
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json -s
+          systemctl enable amazon-cloudwatch-agent
+
+          # Enable crontab
+          dnf install -q -y cronie
+          systemctl enable --now crond
+
+          #
+          systemctl set-default multi-user.target
+          systemctl daemon-reload
+          systemctl enable dcv-post-reboot
+
+          # enable back IPv6
+          sysctl -w net.ipv6.conf.all.disable_ipv6=0
+          sysctl -w net.ipv6.conf.default.disable_ipv6=0
+
+          sleep 1 && reboot
+      Tags:
+        - Key: Name
+          Value: !Ref ec2Name
+        - Key: StackName
+          Value: !Sub ${AWS::StackName}
+        - Key: StackId
+          Value: !Sub ${AWS::StackId}
+        - Key: GitHub
+          Value: https://github.com/aws-samples/ec2-lamp-server
+
+  elasticIP:
+    Condition: useElasticIP
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      NetworkBorderGroup: !Ref AWS::Region
+      InstanceId: !Ref ec2Instance
+      Tags:
+        - Key: StackName
+          Value: !Sub ${AWS::StackName}
+        - Key: StackId
+          Value: !Sub ${AWS::StackId}
+        - Key: Name
+          Value: !Sub "[${AWS::StackName}] - ${ec2Name}"
+        - Key: GitHub
+          Value: https://github.com/aws-samples/ec2-lamp-server
+
+Outputs:
+  EC2console:
+    Description: EC2 console
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/ec2/home?region=${AWS::Region}#Instances:search=${ec2Instance}"
+
+  EC2instanceConnect:
+    Condition: createEICsg
+    Description: EC2 Instance Connect
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/ec2-instance-connect/ssh?connType=standard&instanceId=${ec2Instance}&osUser=ec2-user&sshPort=22#/"
+
+  SSMsessionManager:
+    Description: SSM Session Manager ("sudo passwd ec2-user" to change password)
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${ec2Instance}"
+
+  WebUrl:
+    Description: Website
+    Value:
+      !If [
+        displayPublicIP,
+        !Sub "http://${ec2Instance.PublicIp}",
+        !Sub "http://${ec2Instance.PrivateIp}",
+      ]
